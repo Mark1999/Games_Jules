@@ -4,6 +4,7 @@ import GameInfo from './components/GameInfo';
 import PlayerNameInput from './components/PlayerNameInput';
 import LogPane from './components/LogPane';
 import { createLogEntry } from './utils/logger';
+import { calculateAIMove } from './utils/aiPlayer'; // Added for AI
 import './App.css';
 
 // Helper function to calculate the winner
@@ -43,6 +44,7 @@ const downloadFile = ({ data, fileName, fileType }) => {
 function App() {
   const [player1Name, setPlayer1Name] = useState(''); // Default names can be set here if desired e.g. 'Player 1'
   const [player2Name, setPlayer2Name] = useState(''); // e.g. 'Player 2'
+  const [isAiModeActive, setIsAiModeActive] = useState(true);
   const [gameStarted, setGameStarted] = useState(false);
   const [board, setBoard] = useState(Array(9).fill(null));
   const [xIsNext, setXIsNext] = useState(true); // X starts
@@ -57,8 +59,13 @@ function App() {
   };
 
   const handleStartGame = (p1, p2) => {
-    const p1FinalName = p1 || 'Player 1';
-    const p2FinalName = p2 || 'Player 2';
+    const p1FinalName = p1 || "Player 1 ('X')";
+    let p2FinalName = p2 || "Player 2 ('O')";
+
+    if (isAiModeActive) {
+      p2FinalName = "AI Player ('O')";
+    }
+
     setPlayer1Name(p1FinalName);
     setPlayer2Name(p2FinalName);
     setGameStarted(true);
@@ -69,15 +76,73 @@ function App() {
     setGameStatus('playing'); // Set game status
     // setGameLogs([]); // Optional: Clear logs from previous game. For now, appending.
     logEvent('PLAYER_JOIN', { playerName: p1FinalName, mark: 'X' });
-    logEvent('PLAYER_JOIN', { playerName: p2FinalName, mark: 'O' });
-    logEvent('GAME_START', { player1Name: p1FinalName, player2Name: p2FinalName });
+    if (isAiModeActive) {
+      logEvent('PLAYER_JOIN', { playerName: p2FinalName, mark: 'O', isAI: true });
+    } else {
+      logEvent('PLAYER_JOIN', { playerName: p2FinalName, mark: 'O' });
+    }
+    logEvent('GAME_START', { player1Name: p1FinalName, player2Name: p2FinalName, aiMode: isAiModeActive });
   };
 
+  // New function to handle AI's move
+  const handleAIMove = async (currentBoard) => {
+    // AI is 'O'
+    const { move, thinkingProcess } = calculateAIMove(currentBoard, 'O');
+
+    logEvent('AI_THINKING', thinkingProcess);
+
+    if (move === null) {
+      console.warn("AI couldn't find a move. This shouldn't happen if game is not over.");
+      // Potentially switch turn back or handle error, though calculateAIMove should provide a fallback.
+      // For now, if AI returns null, it might be a draw or an unexpected state.
+      // The existing draw check after human move might cover this.
+      // If game is truly stuck, this log helps.
+      return;
+    }
+
+    const newBoard = currentBoard.slice();
+    newBoard[move] = 'O';
+    setBoard(newBoard);
+    logEvent('PLAYER_MOVE', { playerName: player2Name, mark: 'O', squareIndex: move, boardAfterMove: newBoard.slice(), isAI: true });
+
+    const calculatedWinnerInfo = calculateWinner(newBoard);
+    if (calculatedWinnerInfo) {
+      setWinnerInfo(calculatedWinnerInfo);
+      setGameStatus('winner');
+      logEvent('WINNER_DECLARED', {
+        winnerName: player2Name, // AI is 'O', thus player2Name
+        winnerMark: 'O',
+        winningLine: calculatedWinnerInfo.line,
+        boardState: newBoard.slice(),
+      });
+    } else if (newBoard.every(square => square !== null)) {
+      setIsDraw(true);
+      setGameStatus('draw');
+      logEvent('GAME_DRAW', { boardState: newBoard.slice() });
+    } else {
+      setXIsNext(true); // Switch turn back to Human (X)
+      logEvent('TURN_SWITCH', { nextPlayerName: player1Name, nextPlayerMark: 'X' });
+    }
+  };
+
+
   const handleClick = (i) => {
+    // Prevent human click if it's not their turn (especially in AI mode)
+    if (isAiModeActive && !xIsNext) {
+        logEvent('INVALID_MOVE', {
+            player: player1Name, // Human player trying to click
+            mark: 'X',
+            squareIndex: i,
+            reason: "Not player's turn (AI is thinking or has moved).",
+            currentBoardState: board,
+        });
+        return;
+    }
+
     if (winnerInfo || board[i] || gameStatus !== 'playing') {
       logEvent('INVALID_MOVE', {
-        player: xIsNext ? player1Name : player2Name,
-        mark: xIsNext ? 'X' : 'O',
+        player: xIsNext ? player1Name : player2Name, // This will be player1Name due to the check above in AI mode
+        mark: 'X', // Human is always 'X'
         squareIndex: i,
         reason: winnerInfo ? 'Game already won' : board[i] ? 'Square already taken' : 'Game not in playing state',
         currentBoardState: board,
@@ -85,29 +150,38 @@ function App() {
       return;
     }
 
+    // Human's move (always 'X')
     const newBoard = board.slice();
-    const currentMark = xIsNext ? 'X' : 'O';
-    newBoard[i] = currentMark;
-    setBoard(newBoard); // Update board state
-    logEvent('PLAYER_MOVE', { playerName: xIsNext ? player1Name : player2Name, mark: currentMark, squareIndex: i, boardAfterMove: newBoard.slice() });
+    newBoard[i] = 'X'; // Human player is 'X'
+    setBoard(newBoard);
+    logEvent('PLAYER_MOVE', { playerName: player1Name, mark: 'X', squareIndex: i, boardAfterMove: newBoard.slice() });
 
     const calculatedWinnerInfo = calculateWinner(newBoard);
     if (calculatedWinnerInfo) {
       setWinnerInfo(calculatedWinnerInfo);
       setGameStatus('winner');
       logEvent('WINNER_DECLARED', {
-        winnerName: calculatedWinnerInfo.winner === 'X' ? player1Name : player2Name,
-        winnerMark: calculatedWinnerInfo.winner,
+        winnerName: player1Name, // Human made the winning move
+        winnerMark: 'X',
         winningLine: calculatedWinnerInfo.line,
         boardState: newBoard.slice(),
       });
-    } else if (newBoard.every(square => square !== null)) { // Check for draw
+    } else if (newBoard.every(square => square !== null)) {
       setIsDraw(true);
       setGameStatus('draw');
       logEvent('GAME_DRAW', { boardState: newBoard.slice() });
     } else {
-      setXIsNext(!xIsNext); // Switch turns
-      logEvent('TURN_SWITCH', { nextPlayerName: !xIsNext ? player1Name : player2Name, nextPlayerMark: !xIsNext ? 'X' : 'O' });
+      // It's AI's turn if in AI mode
+      if (isAiModeActive) {
+        setXIsNext(false); // Set turn to AI ('O')
+        logEvent('TURN_SWITCH', { nextPlayerName: player2Name, nextPlayerMark: 'O', isAI: true });
+        // Call AI move function. Adding a slight delay for UX if needed, e.g., setTimeout(() => handleAIMove(newBoard), 500);
+        handleAIMove(newBoard); // Pass the board state after human's move
+      } else {
+        // Regular two-player mode: switch to Player 2 ('O')
+        setXIsNext(false);
+        logEvent('TURN_SWITCH', { nextPlayerName: player2Name, nextPlayerMark: 'O' });
+      }
     }
   };
 
