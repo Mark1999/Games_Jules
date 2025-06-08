@@ -27,6 +27,7 @@ const downloadFile = ({ data, fileName, fileType }) => {
 
 
 function App() {
+  console.log("Welcome to Tic-Tac-Toe!");
   const [player1Name, setPlayer1Name] = useState(''); // Default names can be set here if desired e.g. 'Player 1'
   const [player2Name, setPlayer2Name] = useState(''); // e.g. 'Player 2'
   const [isAiModeActive, setIsAiModeActive] = useState(true);
