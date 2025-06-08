@@ -6,22 +6,7 @@ import LogPane from './components/LogPane';
 import { createLogEntry } from './utils/logger';
 import { calculateAIMove } from './utils/aiPlayer'; // Added for AI
 import './App.css';
-
-// Helper function to calculate the winner
-function calculateWinner(squares) {
-  const lines = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8], // rows
-    [0, 3, 6], [1, 4, 7], [2, 5, 8], // columns
-    [0, 4, 8], [2, 4, 6]             // diagonals
-  ];
-  for (let i = 0; i < lines.length; i++) {
-    const [a, b, c] = lines[i];
-    if (squares[a] && squares[a] === squares[b] && squares[a] === squares[c]) {
-      return { winner: squares[a], line: lines[i] }; // Return winner and winning line
-    }
-  }
-  return null;
-}
+import { calculateWinner } from './utils/gameLogic';
 
 // Helper function for download
 const downloadFile = ({ data, fileName, fileType }) => {
@@ -50,6 +35,7 @@ function App() {
   const [xIsNext, setXIsNext] = useState(true); // X starts
   const [winnerInfo, setWinnerInfo] = useState(null); // Stores { winner: 'X'/'O', line: [...] }
   const [isDraw, setIsDraw] = useState(false);
+  const [isAiThinking, setIsAiThinking] = useState(false);
   const [gameStatus, setGameStatus] = useState('pending'); // 'pending', 'playing', 'winner', 'draw'
   const [gameLogs, setGameLogs] = useState([]); // Stores all log entries
 
@@ -85,7 +71,7 @@ function App() {
   };
 
   // New function to handle AI's move
-  const handleAIMove = async (currentBoard) => {
+  const handleAIMove = (currentBoard) => {
     // AI is 'O'
     const { move, thinkingProcess } = calculateAIMove(currentBoard, 'O');
 
@@ -123,6 +109,7 @@ function App() {
       setXIsNext(true); // Switch turn back to Human (X)
       logEvent('TURN_SWITCH', { nextPlayerName: player1Name, nextPlayerMark: 'X' });
     }
+    setIsAiThinking(false); // Add this line at the end of the main execution path
   };
 
 
@@ -175,8 +162,10 @@ function App() {
       if (isAiModeActive) {
         setXIsNext(false); // Set turn to AI ('O')
         logEvent('TURN_SWITCH', { nextPlayerName: player2Name, nextPlayerMark: 'O', isAI: true });
-        // Call AI move function. Adding a slight delay for UX if needed, e.g., setTimeout(() => handleAIMove(newBoard), 500);
-        handleAIMove(newBoard); // Pass the board state after human's move
+        setIsAiThinking(true);
+        setTimeout(() => {
+          handleAIMove(newBoard);
+        }, 750); // 750ms delay, adjust as needed
       } else {
         // Regular two-player mode: switch to Player 2 ('O')
         setXIsNext(false);
@@ -185,18 +174,30 @@ function App() {
     }
   };
 
-  const handlePlayAgain = () => {
-    logEvent('GAME_RESET', { initiatedByPlayer: true, player1Name, player2Name });
+  const handleRematch = () => {
+    logEvent('GAME_REMATCH', { initiatedByPlayer: true, player1Name, player2Name, aiMode: isAiModeActive });
     setBoard(Array(9).fill(null));
     setXIsNext(true); // Reset to X starts or alternate
     setWinnerInfo(null);
     setIsDraw(false);
     setGameStatus('playing');
-    // To go back to name input screen and allow changing names:
-    // setGameStarted(false);
-    // setPlayer1Name('');
-    // setPlayer2Name('');
-    // setGameLogs([]); // If you want to clear logs for a completely new session
+    setIsAiThinking(false); // Reset AI thinking state
+    // Player names and AI mode remain the same for a rematch
+  };
+
+  const handleNewGame = () => {
+    logEvent('GAME_NEW_SESSION', { initiatedByPlayer: true });
+    setGameStarted(false);
+    setPlayer1Name(''); // Clear player names
+    setPlayer2Name('');
+    // isAiModeActive will be reset by PlayerNameInput's default or user selection
+    setBoard(Array(9).fill(null));
+    setXIsNext(true);
+    setWinnerInfo(null);
+    setIsDraw(false);
+    setGameStatus('pending'); // Set status to pending
+    setIsAiThinking(false); // Reset AI thinking state
+    // Optional: setGameLogs([]); // Decide if logs should be cleared here
   };
 
   const handleDownloadJson = () => {
@@ -251,7 +252,10 @@ function App() {
             winner={winnerInfo?.winner}
             isDraw={isDraw}
             gameStatus={gameStatus}
-            onPlayAgain={handlePlayAgain}
+            onRematch={handleRematch}
+            onNewGame={handleNewGame}
+            isAiModeActive={isAiModeActive} // Pass this new prop
+            isAiThinking={isAiThinking}   // Pass this new prop
           />
         </div>
         <div className="flex-shrink-0 w-full lg:w-[30rem] bg-white p-3 sm:p-4 rounded-xl shadow-2xl">
