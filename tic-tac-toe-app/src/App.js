@@ -72,24 +72,53 @@ function App() {
   };
 
   // New function to handle AI's move
-  const handleAIMove = (currentBoard) => {
+  const handleAIMove = async (currentBoard) => { // Make the function async
     // AI is 'O'
-    const { move, thinkingProcess } = calculateAIMove(currentBoard, 'O');
+    // The calculateAIMove function now returns an object like:
+    // { move: number | null, thinkingProcess: string, error?: boolean }
+    const aiResponse = await calculateAIMove(currentBoard, 'O'); // Await the async call
 
-    logEvent('AI_THINKING', thinkingProcess);
+    logEvent('AI_THINKING', { boardState: currentBoard, thoughts: aiResponse.thinkingProcess });
 
-    if (move === null) {
-      console.warn("AI couldn't find a move. This shouldn't happen if game is not over.");
-      // Potentially switch turn back or handle error, though calculateAIMove should provide a fallback.
-      // For now, if AI returns null, it might be a draw or an unexpected state.
-      // The existing draw check after human move might cover this.
-      // If game is truly stuck, this log helps.
-      return;
+    // Check if AI returned an error or could not make a move
+    if (aiResponse.error || aiResponse.move === null) {
+      console.error("AI could not make a move or encountered an unrecoverable error.", aiResponse);
+      // Potentially set an error state in the UI or simply don't proceed with a board update.
+      // For now, we'll ensure AI thinking stops and turn might implicitly pass back or game state handles it.
+      // If aiResponse.move is null, it means board might be full or in a state AI can't play.
+      // The game's win/draw condition checks should ideally prevent this.
+      // If it's an error, the fallback thoughts are already logged.
+      setIsAiThinking(false); // Ensure AI thinking flag is reset
+
+      // If no move was made, we might need to check for draw again, or it's human's turn if not a draw.
+      // This part depends on how strictly game flow should be managed here.
+      // For now, if AI makes no move, it effectively means no board change, and it will be human's turn again
+      // unless a win/draw was declared before AI's turn.
+      // However, the game logic should check for win/draw *after* human's move, *before* AI's turn.
+      // If AI turn is reached and AI can't move (e.g. board full), it implies a draw if not a win.
+      // Let's re-evaluate board status if AI move is null.
+      if (aiResponse.move === null) {
+          const calculatedWinnerInfo = calculateWinner(currentBoard); // Re-check on current board
+          if (!calculatedWinnerInfo && currentBoard.every(square => square !== null)) {
+              setIsDraw(true);
+              setGameStatus('draw');
+              logEvent('GAME_DRAW', { boardState: currentBoard, reason: "Board full after AI attempted move and found no valid plays." });
+          } else if (!calculatedWinnerInfo) {
+              // No winner, not a draw (e.g. AI error but board not full), switch back to human
+              setXIsNext(true);
+               logEvent('TURN_SWITCH', { nextPlayerName: player1Name, nextPlayerMark: 'X', reason: "AI failed to make a move." });
+          }
+          // If there was a winner, it should have been caught before AI's turn or after human's move.
+      }
+      return; // Stop further processing for AI move
     }
 
+    const { move } = aiResponse; // move is guaranteed to be a number here if no error/null
+
     const newBoard = currentBoard.slice();
-    newBoard[move] = 'O';
+    newBoard[move] = 'O'; // AI is 'O'
     setBoard(newBoard);
+    // The thinkingProcess from aiResponse was already logged above.
     logEvent('PLAYER_MOVE', { playerName: player2Name, mark: 'O', squareIndex: move, boardAfterMove: newBoard.slice(), isAI: true });
 
     const calculatedWinnerInfo = calculateWinner(newBoard);
@@ -110,7 +139,7 @@ function App() {
       setXIsNext(true); // Switch turn back to Human (X)
       logEvent('TURN_SWITCH', { nextPlayerName: player1Name, nextPlayerMark: 'X' });
     }
-    setIsAiThinking(false); // Add this line at the end of the main execution path
+    setIsAiThinking(false); // Reset AI thinking flag
   };
 
 
@@ -164,8 +193,8 @@ function App() {
         setXIsNext(false); // Set turn to AI ('O')
         logEvent('TURN_SWITCH', { nextPlayerName: player2Name, nextPlayerMark: 'O', isAI: true });
         setIsAiThinking(true);
-        setTimeout(() => {
-          handleAIMove(newBoard);
+        setTimeout(async () => { // The callback for setTimeout should be async
+          await handleAIMove(newBoard); // Await the handleAIMove call
         }, 750); // 750ms delay, adjust as needed
       } else {
         // Regular two-player mode: switch to Player 2 ('O')

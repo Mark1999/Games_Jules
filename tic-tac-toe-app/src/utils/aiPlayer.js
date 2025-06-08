@@ -1,108 +1,97 @@
-import { calculateWinner } from './gameLogic'; // Adjusted path for utils directory
+import OpenAI from 'openai';
+import dotenv from 'dotenv';
 
-export const calculateAIMove = (currentBoard, aiMark) => {
-  const opponentMark = aiMark === 'X' ? 'O' : 'X';
-  const emptySquares = currentBoard
-    .map((square, index) => (square === null ? index : null))
-    .filter(index => index !== null);
+dotenv.config();
 
-  let thinkingProcess = {
-    boardState: [...currentBoard],
-    aiMark: aiMark,
-    opponentMark: opponentMark,
-    possibleMoves: [...emptySquares],
-    winningMoveForAI: null,
-    blockingMoveForOpponent: null,
-    strategicOverride: null,
-    chosenMove: null,
-    reason: ""
-  };
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-  // 1. Check for AI win
-  for (const move of emptySquares) {
-    const boardCopy = [...currentBoard];
-    boardCopy[move] = aiMark;
-    if (calculateWinner(boardCopy)?.winner === aiMark) {
-      thinkingProcess.winningMoveForAI = move;
-      thinkingProcess.chosenMove = move;
-      thinkingProcess.reason = `AI takes winning move at index ${move}.`;
-      return {
-        move: move,
-        thinkingProcess: thinkingProcess
-      };
+// Helper function to find a random valid move
+function getRandomValidMove(board) {
+  const emptySquares = [];
+  board.forEach((cell, index) => {
+    if (cell === null || cell === '') { // Check for both null and empty string for an empty cell
+      emptySquares.push(index);
     }
+  });
+  if (emptySquares.length === 0) {
+    // This should ideally not happen if the game correctly identifies win/draw conditions before calling AI.
+    // However, as a safeguard, return null or throw an error.
+    // For Tic-Tac-Toe, if no empty squares, it's a draw or win, AI shouldn't be called.
+    console.error("getRandomValidMove called on a full board or board with no valid moves.");
+    return null;
   }
+  return emptySquares[Math.floor(Math.random() * emptySquares.length)];
+}
 
-  // 2. Check for opponent block
-  for (const move of emptySquares) {
-    const boardCopy = [...currentBoard];
-    boardCopy[move] = opponentMark;
-    if (calculateWinner(boardCopy)?.winner === opponentMark) {
-      thinkingProcess.blockingMoveForOpponent = move;
-      thinkingProcess.chosenMove = move;
-      thinkingProcess.reason = `AI blocks opponent's winning move at index ${move}.`;
-      return {
-        move: move,
-        thinkingProcess: thinkingProcess
-      };
+export async function calculateAIMove(board, playerMark = 'O') {
+  const boardStateString = board.map(cell => (cell === null || cell === '') ? '_' : cell).join(', ');
+  const prompt = `You are Moira, an AI playing as '${playerMark}' in tic-tac-toe. The current board is [${boardStateString}]. Think aloud about your next move. Then respond ONLY with JSON in the following format:
+{
+  "move": <square_index_0_to_8>,
+  "thoughts": "<your_reasoning_for_the_move>"
+}`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: prompt }],
+      response_format: { type: "json_object" },
+    });
+
+    const responseContent = completion.choices[0].message.content;
+    if (!responseContent) {
+      console.error('OpenAI API returned empty content.');
+      throw new Error('OpenAI API returned empty content.'); // Trigger fallback
     }
-  }
 
-  // 3. Strategic placement
-  // 3.a. Try center
-  const centerSquare = 4;
-  if (emptySquares.includes(centerSquare)) {
-    thinkingProcess.strategicOverride = { type: 'center', move: centerSquare };
-    thinkingProcess.chosenMove = centerSquare;
-    thinkingProcess.reason = "AI takes center square.";
+    const parsedResponse = JSON.parse(responseContent);
+
+    if (typeof parsedResponse.move !== 'number' || parsedResponse.move < 0 || parsedResponse.move > 8) {
+      console.error('Invalid move format from API:', parsedResponse);
+      throw new Error('Invalid move format from API.'); // Trigger fallback
+    }
+    if (typeof parsedResponse.thoughts !== 'string') {
+      // If thoughts are missing, we can still proceed with the move but log a warning.
+      // Or, strict mode: throw new Error('Invalid thoughts format from API.');
+      console.warn('Thoughts missing or not a string from API. Proceeding with move if valid.');
+      parsedResponse.thoughts = "AI analysis was not provided in the expected format."; // Provide a default thought
+    }
+
+    // Validate that the AI's chosen square is actually empty
+    if (board[parsedResponse.move] !== null && board[parsedResponse.move] !== '') {
+      console.error(`AI proposed an invalid move to an already taken square: ${parsedResponse.move}. Board: [${boardStateString}]`);
+      throw new Error(`AI proposed move to already taken square ${parsedResponse.move}.`); // Trigger fallback
+    }
+
     return {
-      move: centerSquare,
-      thinkingProcess: thinkingProcess
+      move: parsedResponse.move,
+      thinkingProcess: parsedResponse.thoughts,
+    };
+
+  } catch (error) {
+    console.error('Error calling OpenAI API, parsing response, or invalid move proposed:', error.message);
+    const fallbackMove = getRandomValidMove(board);
+    const fallbackThoughts = `Moira encountered an issue: ${error.message}. Making a random valid move to square ${fallbackMove}.`;
+
+    if (fallbackMove === null) {
+        // This case means the board is full or no valid moves, which should ideally be caught by game logic before calling AI.
+        // If it happens, AI cannot make a move. App.js needs to handle this (e.g. declare draw if board is full).
+        console.error("AI Fallback: No valid random move available. The game should have ended.");
+        // To prevent downstream errors, we need to return something that App.js can check.
+        // Or, if App.js assumes AI always returns a move, this could be problematic.
+        // For now, let's indicate an error state more clearly.
+        return {
+            move: null, // Or a special value like -1, if App.js is prepared to handle it.
+            thinkingProcess: "Moira encountered an issue and no fallback moves are available. The game might be in an inconsistent state.",
+            error: true // Add an error flag
+        };
+    }
+
+    return {
+      move: fallbackMove,
+      thinkingProcess: fallbackThoughts,
     };
   }
-
-  // 3.b. Try corners
-  const corners = [0, 2, 6, 8];
-  const availableCorners = corners.filter(corner => emptySquares.includes(corner));
-  if (availableCorners.length > 0) {
-    const cornerMove = availableCorners[0]; // Pick the first available corner
-    thinkingProcess.strategicOverride = { type: 'corner', move: cornerMove };
-    thinkingProcess.chosenMove = cornerMove;
-    thinkingProcess.reason = `AI takes corner square at index ${cornerMove}.`;
-    return {
-      move: cornerMove,
-      thinkingProcess: thinkingProcess
-    };
-  }
-
-  // 3.c. Try sides
-  const sides = [1, 3, 5, 7];
-  const availableSides = sides.filter(side => emptySquares.includes(side));
-  if (availableSides.length > 0) {
-    const sideMove = availableSides[0]; // Pick the first available side
-    thinkingProcess.strategicOverride = { type: 'side', move: sideMove };
-    thinkingProcess.chosenMove = sideMove;
-    thinkingProcess.reason = `AI takes side square at index ${sideMove}.`;
-    return {
-      move: sideMove,
-      thinkingProcess: thinkingProcess
-    };
-  }
-  
-  // Should not be reached if there are empty squares, but as a fallback:
-  if (emptySquares.length > 0) {
-      thinkingProcess.chosenMove = emptySquares[0];
-      thinkingProcess.reason = `AI takes the first available square at index ${emptySquares[0]} as a fallback.`;
-       return {
-        move: emptySquares[0],
-        thinkingProcess: thinkingProcess
-      };
-  }
-
-  // No moves possible (board is full or error)
-  thinkingProcess.reason = "No moves available for AI.";
-  return {
-    move: null, // Or some other indicator like -1 if preferred
-    thinkingProcess: thinkingProcess
-  };
-};
+}
