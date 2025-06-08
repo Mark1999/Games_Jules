@@ -80,46 +80,55 @@ function App() {
 
     logEvent('AI_THINKING', { boardState: currentBoard, thoughts: aiResponse.thinkingProcess });
 
-    // Check if AI returned an error or could not make a move
-    if (aiResponse.error || aiResponse.move === null) {
-      console.error("AI could not make a move or encountered an unrecoverable error.", aiResponse);
-      // Potentially set an error state in the UI or simply don't proceed with a board update.
-      // For now, we'll ensure AI thinking stops and turn might implicitly pass back or game state handles it.
-      // If aiResponse.move is null, it means board might be full or in a state AI can't play.
-      // The game's win/draw condition checks should ideally prevent this.
-      // If it's an error, the fallback thoughts are already logged.
+    // Check if AI could not make a move
+    if (aiResponse.move === null) {
+      console.error(`AI could not make a move. Fallback used: ${aiResponse.fallbackUsed}. Details: ${aiResponse.thinkingProcess}`);
+      logEvent('AI_MOVE_FAILED', {
+          reason: aiResponse.thinkingProcess,
+          fallbackUsed: aiResponse.fallbackUsed,
+          boardState: currentBoard
+      });
       setIsAiThinking(false); // Ensure AI thinking flag is reset
 
-      // If no move was made, we might need to check for draw again, or it's human's turn if not a draw.
-      // This part depends on how strictly game flow should be managed here.
-      // For now, if AI makes no move, it effectively means no board change, and it will be human's turn again
-      // unless a win/draw was declared before AI's turn.
-      // However, the game logic should check for win/draw *after* human's move, *before* AI's turn.
-      // If AI turn is reached and AI can't move (e.g. board full), it implies a draw if not a win.
-      // Let's re-evaluate board status if AI move is null.
-      if (aiResponse.move === null) {
-          const calculatedWinnerInfo = calculateWinner(currentBoard); // Re-check on current board
-          if (!calculatedWinnerInfo && currentBoard.every(square => square !== null)) {
-              setIsDraw(true);
-              setGameStatus('draw');
-              logEvent('GAME_DRAW', { boardState: currentBoard, reason: "Board full after AI attempted move and found no valid plays." });
-          } else if (!calculatedWinnerInfo) {
-              // No winner, not a draw (e.g. AI error but board not full), switch back to human
-              setXIsNext(true);
-               logEvent('TURN_SWITCH', { nextPlayerName: player1Name, nextPlayerMark: 'X', reason: "AI failed to make a move." });
-          }
-          // If there was a winner, it should have been caught before AI's turn or after human's move.
+      // Re-evaluate board status if AI move is null.
+      // This logic assumes that if AI.move is null, it's either a full board (draw) or an unexpected error where AI couldn't play.
+      const calculatedWinnerInfo = calculateWinner(currentBoard); // Re-check on current board
+      if (!calculatedWinnerInfo && currentBoard.every(square => square !== null)) {
+          setIsDraw(true);
+          setGameStatus('draw');
+          logEvent('GAME_DRAW', {
+              boardState: currentBoard,
+              reason: `Board full. AI fallback used: ${aiResponse.fallbackUsed}. AI thoughts: ${aiResponse.thinkingProcess}`
+          });
+      } else if (!calculatedWinnerInfo) {
+          // No winner, not a draw (e.g., AI error but board not full), switch back to human
+          // This case might indicate an unexpected issue if AI couldn't make a move on a non-full board.
+          setXIsNext(true);
+           logEvent('TURN_SWITCH', {
+               nextPlayerName: player1Name,
+               nextPlayerMark: 'X',
+               reason: `AI failed to make a move. Fallback used: ${aiResponse.fallbackUsed}. Details: ${aiResponse.thinkingProcess}`
+            });
       }
+      // If there was a winner, it should have been caught before AI's turn.
       return; // Stop further processing for AI move
     }
 
-    const { move } = aiResponse; // move is guaranteed to be a number here if no error/null
+    const { move } = aiResponse; // move is guaranteed to be a number here
 
     const newBoard = currentBoard.slice();
     newBoard[move] = 'O'; // AI is 'O'
     setBoard(newBoard);
-    // The thinkingProcess from aiResponse was already logged above.
-    logEvent('PLAYER_MOVE', { playerName: player2Name, mark: 'O', squareIndex: move, boardAfterMove: newBoard.slice(), isAI: true });
+    logEvent('PLAYER_MOVE', {
+      playerName: player2Name,
+      mark: 'O',
+      squareIndex: move,
+      boardAfterMove: newBoard.slice(),
+      isAI: true,
+      aiVersion: aiResponse.aiVersion,
+      fallbackUsed: aiResponse.fallbackUsed,
+      thoughts: aiResponse.thinkingProcess
+    });
 
     const calculatedWinnerInfo = calculateWinner(newBoard);
     if (calculatedWinnerInfo) {

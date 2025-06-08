@@ -24,11 +24,27 @@ function getRandomValidMove(board) {
 
 export async function calculateAIMove(board, playerMark = 'O') {
   const boardStateString = board.map(cell => (cell === null || cell === '') ? '_' : cell).join(', ');
-  const prompt = `You are Moira, an AI playing as '${playerMark}' in tic-tac-toe. The current board is [${boardStateString}]. Think aloud about your next move. Then respond ONLY with JSON in the following format:
-{
-  "move": <square_index_0_to_8>,
-  "thoughts": "<your_reasoning_for_the_move>"
-}`;
+  const prompt = `You are Moira, an AI playing as '${playerMark}' in a game of Tic-Tac-Toe.
+      The board is indexed from 0-8 like this:
+      [0, 1, 2]
+      [3, 4, 5]
+      [6, 7, 8]
+
+      The current board state is: [${boardStateString}]
+
+      Follow this reasoning process:
+      1. If you can win in this move, do it.
+      2. If the opponent can win next, block them.
+      3. Otherwise:
+         - Prefer center (4), then corner (0,2,6,8), then edge (1,3,5,7).
+      4. Never choose an occupied square.
+
+      Return only JSON:
+      {
+        "move": <index from 0-8>,
+        "thoughts": "<why you picked it>"
+      }
+      `;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -65,6 +81,8 @@ export async function calculateAIMove(board, playerMark = 'O') {
     return {
       move: parsedResponse.move,
       thinkingProcess: parsedResponse.thoughts,
+      aiVersion: 'gpt-4o',
+      fallbackUsed: false
     };
 
   } catch (error) {
@@ -79,16 +97,20 @@ export async function calculateAIMove(board, playerMark = 'O') {
         // To prevent downstream errors, we need to return something that App.js can check.
         // Or, if App.js assumes AI always returns a move, this could be problematic.
         // For now, let's indicate an error state more clearly.
+        const fallbackThoughtsWhenNull = `Moira encountered an issue: ${error.message}. No valid random move available.`;
         return {
             move: null, // Or a special value like -1, if App.js is prepared to handle it.
-            thinkingProcess: "Moira encountered an issue and no fallback moves are available. The game might be in an inconsistent state.",
-            error: true // Add an error flag
+            thinkingProcess: fallbackThoughtsWhenNull,
+            aiVersion: 'gpt-4o',
+            fallbackUsed: true
         };
     }
 
     return {
       move: fallbackMove,
       thinkingProcess: fallbackThoughts,
+      aiVersion: 'gpt-4o',
+      fallbackUsed: true
     };
   }
 }
