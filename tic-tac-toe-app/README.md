@@ -39,6 +39,21 @@ Instead, it will copy all the configuration files and the transitive dependencie
 
 You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
 
+## Configuration
+
+This project uses the OpenAI API for the AI player functionality. To use this feature, you will need to provide your own OpenAI API key.
+
+1.  Create a new file named `.env` in the root of the `tic-tac-toe-app` directory (alongside `package.json`).
+2.  Add your API key to this file in the following format:
+
+    ```
+    REACT_APP_OPENAI_API_KEY=your_openai_api_key_here
+    ```
+
+    Replace `your_openai_api_key_here` with your actual OpenAI API key (e.g., `sk-...`).
+
+Create React App will automatically load this environment variable during development and include it in the build. Make sure this `.env` file is included in your `.gitignore` file to prevent accidentally committing your API key.
+
 ## Learn More
 
 You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).

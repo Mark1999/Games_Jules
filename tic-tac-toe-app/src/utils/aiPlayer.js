@@ -1,10 +1,7 @@
 import OpenAI from 'openai';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.REACT_APP_OPENAI_API_KEY,
 });
 
 // Helper function to find a random valid move
