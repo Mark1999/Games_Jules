@@ -14,14 +14,17 @@ coverage/
 *.lcov
 
 # === Environment variables ===
-.env*
+.env
+.env.*         # Catch variants like .env.local, .env.production, etc.
 !.env.example
+tic-tac-toe-app/.env
 
 # === Log files ===
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+*.log
 
 # === OS cruft ===
 .DS_Store
@@ -34,11 +37,10 @@ Thumbs.db
 
 # === Misc ===
 *.local
-*.log
 *.tgz
 
 # === Optional ===
-# Ignore lock files if using a single package manager only
+# Uncomment if you're using only one package manager
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
