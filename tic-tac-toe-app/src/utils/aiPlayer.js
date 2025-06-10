@@ -24,31 +24,32 @@ function getRandomValidMove(board) {
 
 export async function calculateAIMove(board, playerMark = 'O') {
   const boardStateString = board.map(cell => (cell === null || cell === '') ? '_' : cell).join(', ');
-  const prompt = `You are Moira, an expert AI playing as '${playerMark}' in a game of Tic-Tac-Toe. Your goal is to win.
-The board is indexed from 0-8 like this:
+  const prompt = `You are Moira, an AI playing as '${playerMark}' in a game of Tic-Tac-Toe. The board is indexed from 0-8 like this:
 [0, 1, 2]
 [3, 4, 5]
 [6, 7, 8]
-
 The current board state is: [${boardStateString}]
 
-Follow this precise reasoning process. Consider these rules in order of importance:
-1.  **Win**: If you have an immediate winning move (two of your marks in a line with one empty square), take that winning square.
-2.  **Block Opponent's Win**: Critical: If the opponent has an immediate winning move (two of their marks in a line with one empty square), you MUST block it by playing in that empty square. Check all rows, columns, and diagonals for the opponent's pending wins.
-3.  **Create Fork**: If neither you nor the opponent can win immediately, check if you can create a fork – a situation where you place your mark to create two potential winning lines simultaneously. If multiple fork opportunities exist, choose one.
-4.  **Block Opponent's Fork**: If you cannot create a fork, and the opponent is about to create a fork on their next move, you should try to block their fork. This is more complex: identify if the opponent can make a move that creates two winning threats for them. Play to prevent such a scenario. (e.g., if opponent has X's at 0 and 8, and you play at 4 (center), they might try to create a fork at 2 or 6. You might need to take a defensive position). *Consider this step carefully.*
-5.  **Strategic Placement**: If no immediate win, block, fork, or fork-block is apparent:
-    a.  **Center**: Take the center square (4) if it is available.
-    b.  **Opposite Corner**: If the opponent has taken a corner, and the center is taken by you, take the corner opposite to the opponent's.
-    c.  **Empty Corner**: Otherwise, take any available corner square (0, 2, 6, 8).
-    d.  **Empty Side**: As a last resort, take any available side/edge square (1, 3, 5, 7).
+Follow this reasoning process before selecting your move:
 
-6.  **Valid Moves Only**: Never choose an occupied square. Ensure your chosen move index is an empty square on the current board.
+If you can win in this move, do it.
 
-Return only JSON:
+If the opponent can win in their next move, block it.
+
+Otherwise:
+
+Prefer the center (index 4).
+
+Then any corner (0, 2, 6, 8).
+
+Then any edge (1, 3, 5, 7).
+
+Never choose an already occupied square.
+
+Return only the following JSON object:
 {
-  "move": <index from 0-8>,
-  "thoughts": "<Explain your reasoning step-by-step based on the rules above. State which rule number led to your decision. If you are blocking or winning, specify the line (e.g., 'Blocking opponent's win on row 0-1-2 by playing at 2').>"
+"move": <square_index_0_to_8>,
+"thoughts": "<your reasoning for this move>"
 }
 `;
 
@@ -92,7 +93,8 @@ Return only JSON:
     };
 
   } catch (error) {
-    console.error('Error calling OpenAI API, parsing response, or invalid move proposed:', error.message);
+    console.error("Error during OpenAI API call or processing. Full prompt sent:", prompt);
+    console.error('Error details:', error.message, error.response ? error.response.data : '(No response data)');
     const fallbackMove = getRandomValidMove(board);
     const fallbackThoughts = `Moira encountered an issue: ${error.message}. Making a random valid move to square ${fallbackMove}.`;
 
